@@ -1,5 +1,7 @@
 def remote = [:]
 def git_url = "git@github.com:chesnokov70/node-app-multy-ec2.git"
+def instances = ['ec2-instance-1', 'ec2-instance-2', 'ec2-instance-3', 'ec2-instance-4', 'ec2-instance-5']
+
 pipeline {
   agent any
   parameters {
@@ -13,84 +15,66 @@ pipeline {
     AWS_REGION = 'us-east-1'
   }
   stages {
-      stage('Checkout Code') {
+      stage('Configure credentials') {
             steps {
-                git 'git@github.com:chesnokov70/node-app-multy-ec2.git'
+                withCredentials([sshUserPrivateKey(credentialsId: 'ssh_instance_key', 
+                                                   keyFileVariable: 'private_key', 
+                                                   usernameVariable: 'username')]) {
+                    script {
+                        instances.each { instance ->
+                            node(instance) {
+                                remote.name = "${env.HOST}"
+                                remote.host = "${env.HOST}"
+                                remote.user = "$username"
+                                remote.identity = readFile("$private_key")
+                                remote.allowAnyHosts = true
+                            }
+                        }
+                    }
+                }
             }
         }
-
-        stage('Terraform Init & Plan') {
-            steps {
-                sh '''
-                cd terraform
-                terraform init
-                terraform plan -out=tfplan
-                '''
-            }
-        }
-
-        stage('Terraform Apply') {
-            steps {
-                sh '''
-                cd terraform
-                terraform apply -auto-approve
-                '''
-            }
-        }
-
-        stage('Copy SSH Key to Instances') {
+      stage('Clone repo') {
             steps {
                 script {
-                    def instances = sh(
-                        script: '''
-                        aws ec2 describe-instances \
-                            --query "Reservations[*].Instances[*].PublicIpAddress" \
-                            --filters "Name=tag:Name,Values=your-ec2-tag" \
-                            --region $AWS_REGION \
-                            --output text
-                        ''',
-                        returnStdout: true
-                    ).trim().split()
+                    instances.each { instance ->
+                        node(instance) {
+                            withCredentials([sshUserPrivateKey(credentialsId: 'ssh_github_access_key', 
+                                                               keyFileVariable: 'GIT_SSH_KEY')]) {
+                                sh 'mkdir -p ~/.ssh'
+                                sh 'cp $GIT_SSH_KEY ~/.ssh/id_rsa'
+                                sh 'chmod 600 ~/.ssh/id_rsa'
+                                sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
+                            }
 
-                    instances.each { ip ->
-                        sh """
-                        ssh -o StrictHostKeyChecking=no ubuntu@${ip} \
-                        "sudo mkdir -p /root/.ssh && \
-                        sudo chmod 700 /root/.ssh && \
-                        echo '${readFile(SSH_KEY_PATH)}' | sudo tee -a /root/.ssh/authorized_keys && \
-                        sudo chmod 600 /root/.ssh/authorized_keys"
-                        """
+                            checkout([
+                                $class: 'GitSCM', 
+                                branches: [[name: "${revision}"]], 
+                                doGenerateSubmoduleConfigurations: false, 
+                                extensions: [], 
+                                submoduleCfg: [], 
+                                userRemoteConfigs: [[credentialsId: 'ssh_github_access_key', url: "$git_url"]]
+                            ])
+                        }
                     }
                 }
             }
         }
 
-        stage('Deploy App') {
+      stage('Build and push') {
             steps {
                 script {
-                    def instances = sh(
-                        script: '''
-                        aws ec2 describe-instances \
-                            --query "Reservations[*].Instances[*].PublicIpAddress" \
-                            --filters "Name=tag:Name,Values=your-ec2-tag" \
-                            --region $AWS_REGION \
-                            --output text
-                        ''',
-                        returnStdout: true
-                    ).trim().split()
-
-                    instances.each { ip ->
-                        sh """
-                        ssh -o StrictHostKeyChecking=no root@${ip} << EOF
-                        sudo apt-get update
-                        sudo apt-get install -y docker.io
-                        docker run -d -p 8080:8080 your-app-image:latest
-                        EOF
-                        """
+                    instances.each { instance ->
+                          node(instance) {
+                              sh """ 
+                              docker login -u chesnokov70 -p $TOKEN
+                              docker build -t "${env.REGISTRY}:${env.BUILD_ID}" .
+                              docker push "${env.REGISTRY}:${env.BUILD_ID}"
+                              """
+                          }
                     }
                 }
-            }
-        }
-   
+            }        
+      }           
   }    
 } 
