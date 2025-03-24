@@ -1,5 +1,5 @@
 def remote = [:]
-def git_url = "git@github.com:chesnokov70/node-app.git"
+def git_url = "git@github.com:chesnokov70/node-app-multy-ec2.git"
 pipeline {
   agent any
   parameters {
@@ -15,7 +15,7 @@ pipeline {
   stages {
       stage('Checkout Code') {
             steps {
-                git 'git@github.com:chesnokov70/node-app.git'
+                git 'git@github.com:chesnokov70/node-app-multy-ec2.git'
             }
         }
 
