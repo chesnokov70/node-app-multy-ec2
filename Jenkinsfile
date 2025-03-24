@@ -6,7 +6,7 @@ pipeline {
     gitParameter (name: 'revision', type: 'PT_BRANCH')
   }
   environment {
-    REGISTRY = "chesnokov70/node-app"
+    REGISTRY = "chesnokov70/node-app-multy-ec2"
     SSH_KEY_PATH = '/home/jenkins/.ssh/id_ed25519.pub'
     SSH_KEY = credentials('ssh_instance_key')
     TOKEN = credentials('hub_token')
