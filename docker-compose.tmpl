@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  node-app:
+    image: ${APP_IMG}
+    container_name: node-app
+    restart: always
+  nginx:
+    image: chesnokov70/node-app:nginx
+    container_name: nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - node-app
+    restart: always
